@@ -30,7 +30,7 @@ import (
 )
 
 var (
-	version = "dev/unknown"
+	version = "v4.5.3-maintenance"
 )
 
 func init() {

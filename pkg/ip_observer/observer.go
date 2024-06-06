@@ -17,30 +17,20 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-package nftset_utils
+package ip_observer
 
 import (
-	"net"
+	"net/netip"
 )
 
-func broadcastAddr(n *net.IPNet) net.IP {
-	broadcast := make(net.IP, len(n.IP))
-	copy(broadcast, n.IP)
-	for i := 0; i < len(n.IP); i++ {
-		broadcast[i] = n.IP[i] | ^n.Mask[i]
-	}
-	return broadcast
+type IPObserver interface {
+	// Observe notifies the IPObserver. addr must be valid.
+	Observe(addr netip.Addr)
 }
 
-func nextIP(ip net.IP) net.IP {
-	res := make([]byte, len(ip))
-	copy(res, ip)
+type NopObserver struct{}
 
-	for i := len(res) - 1; i >= 0; i-- {
-		res[i]++
-		if res[i] != 0 {
-			break
-		}
-	}
-	return res
+func NewNopObserver() NopObserver {
+	return NopObserver{}
 }
+func (n NopObserver) Observe(_ netip.Addr) {}

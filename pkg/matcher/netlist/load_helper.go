@@ -28,14 +28,14 @@ import (
 	"github.com/IrineSistiana/mosdns/v4/pkg/utils"
 	"google.golang.org/protobuf/proto"
 	"io"
-	"net"
 	"net/netip"
 	"strings"
 	"sync/atomic"
 )
 
 type MatcherGroup struct {
-	g []Matcher
+	g      []Matcher
+	closer []func()
 }
 
 func (m *MatcherGroup) Len() int {
@@ -46,9 +46,9 @@ func (m *MatcherGroup) Len() int {
 	return s
 }
 
-func (m *MatcherGroup) Match(ip net.IP) (bool, error) {
+func (m *MatcherGroup) Match(addr netip.Addr) (bool, error) {
 	for _, list := range m.g {
-		ok, err := list.Match(ip)
+		ok, err := list.Match(addr)
 		if err != nil {
 			return false, err
 		}
@@ -57,6 +57,13 @@ func (m *MatcherGroup) Match(ip net.IP) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+func (m *MatcherGroup) Close() error {
+	for _, f := range m.closer {
+		f()
+	}
+	return nil
 }
 
 type DynamicMatcher struct {
@@ -77,8 +84,8 @@ func (d *DynamicMatcher) Update(newData []byte) error {
 	return nil
 }
 
-func (d *DynamicMatcher) Match(ip net.IP) (bool, error) {
-	return d.v.Load().(*List).Match(ip)
+func (d *DynamicMatcher) Match(addr netip.Addr) (bool, error) {
+	return d.v.Load().(*List).Match(addr)
 }
 
 func (d *DynamicMatcher) Len() int {
@@ -86,6 +93,8 @@ func (d *DynamicMatcher) Len() int {
 }
 
 // BatchLoadProvider is a helper func to load multiple files using Load.
+// Caller must call MatcherGroup.Close to detach this matcher from data_provider.DataManager to
+// avoid leaking.
 func BatchLoadProvider(e []string, dm *data_provider.DataManager) (*MatcherGroup, error) {
 	mg := new(MatcherGroup)
 	staticMatcher := NewList()
@@ -118,6 +127,9 @@ func BatchLoadProvider(e []string, dm *data_provider.DataManager) (*MatcherGroup
 				return nil, fmt.Errorf("failed to load data from provider %s, %w", providerName, err)
 			}
 			mg.g = append(mg.g, m)
+			mg.closer = append(mg.closer, func() {
+				provider.DeleteListener(m)
+			})
 		} else {
 			if err := LoadFromText(staticMatcher, s); err != nil {
 				return nil, fmt.Errorf("failed to load data %s, %w", s, err)

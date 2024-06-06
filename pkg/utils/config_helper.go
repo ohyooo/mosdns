@@ -17,36 +17,39 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-package nftset_utils
+package utils
 
 import (
-	"net"
-	"testing"
+	"github.com/mitchellh/mapstructure"
+	"golang.org/x/exp/constraints"
 )
 
-func Test_broadcastAddr(t *testing.T) {
-	tests := []struct {
-		name string
-		cidr string
-		want string
-	}{
-		{"1", "192.168.1.1/24", "192.168.1.255"},
-		{"2", "192.168.1.1/32", "192.168.1.1"},
-		{"3", "192.168.1.1/16", "192.168.255.255"},
-		{"4", "192.168.1.1/25", "192.168.1.127"},
-		{"5", "2001:db8::68/128", "2001:db8::68"},
-		{"6", "2001:db8::68/64", "2001:0DB8:0000:0000:FFFF:FFFF:FFFF:FFFF"},
+func SetDefaultNum[K constraints.Integer | constraints.Float](p *K, d K) {
+	if *p == 0 {
+		*p = d
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, ipNet, err := net.ParseCIDR(tt.cidr)
-			if err != nil {
-				t.Fatal(err)
-			}
-			want := net.ParseIP(tt.want)
-			if got := broadcastAddr(ipNet); !got.Equal(want) {
-				t.Errorf("broadcastAddr() = %v, want %v", got, tt.want)
-			}
-		})
+}
+
+func CheckNumRange[K constraints.Integer | constraints.Float](v, min, max K) bool {
+	if v < min || v > max {
+		return false
 	}
+	return true
+}
+
+// WeakDecode decodes args from config to output.
+func WeakDecode(in map[string]interface{}, output interface{}) error {
+	config := &mapstructure.DecoderConfig{
+		ErrorUnused:      true,
+		Result:           output,
+		WeaklyTypedInput: true,
+		TagName:          "yaml",
+	}
+
+	decoder, err := mapstructure.NewDecoder(config)
+	if err != nil {
+		return err
+	}
+
+	return decoder.Decode(in)
 }

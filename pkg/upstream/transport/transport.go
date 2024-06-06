@@ -22,12 +22,12 @@ package transport
 import (
 	"context"
 	"errors"
+	"github.com/IrineSistiana/mosdns/v4/pkg/utils"
 	"github.com/miekg/dns"
 	"go.uber.org/zap"
 	"io"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -49,11 +49,8 @@ const (
 	connTooOldThreshold = time.Millisecond * 500
 )
 
-// Transport is a DNS msg transport that supposes DNS over UDP,TCP,TLS.
-// For UDP, it can reuse UDP sockets.
-// For TCP and DoT, it implements RFC 7766 and supports pipeline mode and can handle
-// out-of-order responses.
-type Transport struct {
+// Opts for Transport,
+type Opts struct {
 	// Nil logger disables logging.
 	Logger *zap.Logger
 
@@ -91,47 +88,50 @@ type Transport struct {
 	// can handle. The connection will be closed if it reached the limit.
 	// Default is defaultMaxQueryPerConn.
 	MaxQueryPerConn uint16
+}
+
+// init check and set defaults for this Opts.
+func (opts *Opts) init() error {
+	if opts.Logger == nil {
+		opts.Logger = nopLogger
+	}
+	if opts.DialFunc == nil || opts.WriteFunc == nil || opts.ReadFunc == nil {
+		return errors.New("opts missing required func(s)")
+	}
+
+	utils.SetDefaultNum(&opts.DialTimeout, defaultDialTimeout)
+	utils.SetDefaultNum(&opts.IdleTimeout, defaultIdleTimeout)
+	utils.SetDefaultNum(&opts.MaxConns, defaultMaxConns)
+	utils.SetDefaultNum(&opts.MaxQueryPerConn, defaultMaxQueryPerConn)
+	return nil
+}
+
+func NewTransport(opts Opts) (*Transport, error) {
+	if err := opts.init(); err != nil {
+		return nil, err
+	}
+	return &Transport{
+		opts: opts,
+	}, nil
+}
+
+// Transport is a DNS msg transport that supposes DNS over UDP,TCP,TLS.
+// For UDP, it can reuse UDP sockets.
+// For TCP and DoT, it implements RFC 7766 and supports pipeline mode and can handle
+// out-of-order responses.
+type Transport struct {
+	opts Opts
 
 	m                  sync.Mutex // protect following fields
 	closed             bool
-	pipelineConns      map[*dnsConn]struct{}
+	pipelineConns      map[*dnsConn]*pipelineStatus
 	idledReusableConns map[*dnsConn]struct{}
 	reusableConns      map[*dnsConn]struct{}
 }
 
-func (t *Transport) logger() *zap.Logger {
-	if l := t.Logger; l != nil {
-		return l
-	}
-	return nopLogger
-}
-
-func (t *Transport) idleTimeout() time.Duration {
-	if t.IdleTimeout == 0 {
-		return defaultIdleTimeout
-	}
-	return t.IdleTimeout
-}
-
-func (t *Transport) dialTimeout() time.Duration {
-	if t := t.DialTimeout; t > 0 {
-		return t
-	}
-	return defaultDialTimeout
-}
-
-func (t *Transport) maxConns() int {
-	if n := t.MaxConns; n > 0 {
-		return n
-	}
-	return defaultMaxConns
-}
-
-func (t *Transport) maxQueryPerConn() uint16 {
-	if n := t.MaxQueryPerConn; n > 0 {
-		return n
-	}
-	return defaultMaxQueryPerConn
+type pipelineStatus struct {
+	wg     sync.WaitGroup
+	served int
 }
 
 func (t *Transport) isClosed() bool {
@@ -146,31 +146,15 @@ func (t *Transport) ExchangeContext(ctx context.Context, q *dns.Msg) (*dns.Msg, 
 		return nil, errClosedTransport
 	}
 
-	if t.idleTimeout() <= 0 {
+	if t.opts.IdleTimeout <= 0 {
 		return t.exchangeWithoutConnReuse(ctx, q)
 	}
 
-	if t.EnablePipeline {
+	if t.opts.EnablePipeline {
 		return t.exchangeWithPipelineConn(ctx, q)
 	}
 
 	return t.exchangeWithReusableConn(ctx, q)
-}
-
-func (t *Transport) CloseIdleConnections() {
-	t.m.Lock()
-	defer t.m.Unlock()
-
-	for conn := range t.pipelineConns {
-		if conn.queueLen() == 0 {
-			delete(t.pipelineConns, conn)
-			conn.closeWithErr(errEOL)
-		}
-	}
-	for conn := range t.idledReusableConns {
-		conn.closeWithErr(errEOL)
-		delete(t.idledReusableConns, conn)
-	}
 }
 
 // Close closes the Transport and all its active connections.
@@ -193,6 +177,8 @@ func (t *Transport) Close() error {
 }
 
 func (t *Transport) exchangeWithPipelineConn(ctx context.Context, m *dns.Msg) (*dns.Msg, error) {
+	const maxRetry = 3
+
 	attempt := 0
 	var latestErr error
 	for {
@@ -202,17 +188,19 @@ func (t *Transport) exchangeWithPipelineConn(ctx context.Context, m *dns.Msg) (*
 		}
 
 		if latestErr != nil {
-			t.logger().Debug("retrying pipeline connection", zap.NamedError("previous_err", latestErr), zap.Int("attempt", attempt))
+			t.opts.Logger.Debug("retrying pipeline connection", zap.NamedError("previous_err", latestErr), zap.Int("attempt", attempt))
 		}
 
-		conn, isNewConn, allocatedQid, err := t.getPipelineConn()
+		conn, allocatedQid, isNewConn, wg, err := t.getPipelineConn()
 		if err != nil {
 			return nil, err
 		}
 
 		r, err := conn.exchangePipeline(ctx, m, allocatedQid)
+		wg.Done()
+
 		if err != nil {
-			if !isNewConn && attempt <= 3 {
+			if !isNewConn && attempt <= maxRetry {
 				continue
 			}
 			return nil, err
@@ -222,7 +210,7 @@ func (t *Transport) exchangeWithPipelineConn(ctx context.Context, m *dns.Msg) (*
 }
 
 func (t *Transport) exchangeWithoutConnReuse(ctx context.Context, m *dns.Msg) (*dns.Msg, error) {
-	conn, err := t.DialFunc(ctx)
+	conn, err := t.opts.DialFunc(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +218,7 @@ func (t *Transport) exchangeWithoutConnReuse(ctx context.Context, m *dns.Msg) (*
 
 	conn.SetDeadline(getContextDeadline(ctx, defaultNoConnReuseQueryTimeout))
 
-	_, err = t.WriteFunc(conn, m)
+	_, err = t.opts.WriteFunc(conn, m)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +230,7 @@ func (t *Transport) exchangeWithoutConnReuse(ctx context.Context, m *dns.Msg) (*
 
 	resChan := make(chan *result, 1)
 	go func() {
-		b, _, err := t.ReadFunc(conn)
+		b, _, err := t.opts.ReadFunc(conn)
 		resChan <- &result{b, err}
 	}()
 
@@ -255,6 +243,8 @@ func (t *Transport) exchangeWithoutConnReuse(ctx context.Context, m *dns.Msg) (*
 }
 
 func (t *Transport) exchangeWithReusableConn(ctx context.Context, m *dns.Msg) (*dns.Msg, error) {
+	const maxRetry = 3
+
 	attempt := 0
 	var latestErr error
 	for {
@@ -264,7 +254,7 @@ func (t *Transport) exchangeWithReusableConn(ctx context.Context, m *dns.Msg) (*
 		}
 
 		if latestErr != nil {
-			t.logger().Debug("retrying reusable connection", zap.NamedError("previous_err", latestErr), zap.Int("attempt", attempt))
+			t.opts.Logger.Debug("retrying reusable connection", zap.NamedError("previous_err", latestErr), zap.Int("attempt", attempt))
 		}
 
 		conn, isNewConn, err := t.getReusableConn()
@@ -275,7 +265,7 @@ func (t *Transport) exchangeWithReusableConn(ctx context.Context, m *dns.Msg) (*
 		r, err := conn.exchangeConnReuse(ctx, m)
 		t.releaseReusableConn(conn, err)
 		if err != nil {
-			if !isNewConn && attempt <= 3 {
+			if !isNewConn && attempt <= maxRetry {
 				continue
 			}
 			return nil, err
@@ -338,42 +328,64 @@ func (t *Transport) releaseReusableConn(c *dnsConn, err error) {
 	}
 }
 
-func (t *Transport) getPipelineConn() (conn *dnsConn, isNewConn bool, allocatedQid uint16, err error) {
+// getPipelineConn returns a dnsConn for pipelining queries.
+// Caller must call wg.Done() after dnsConn.exchangePipeline.
+func (t *Transport) getPipelineConn() (
+	conn *dnsConn,
+	allocatedQid uint16,
+	isNewConn bool,
+	wg *sync.WaitGroup,
+	err error,
+) {
 	t.m.Lock()
 	defer t.m.Unlock()
 
 	if t.closed {
-		return nil, false, 0, errClosedTransport
+		err = errClosedTransport
+		return
 	}
 
 	// Try to get an existing connection.
-	for c := range t.pipelineConns {
+	var connStatus *pipelineStatus
+	for c, status := range t.pipelineConns {
 		if c.isClosed() || t.connTooOld(c) {
 			delete(t.pipelineConns, c)
 			continue
 		}
 		conn = c
+		connStatus = status
 		break
 	}
 
-	// Create a new connection.
-	if conn == nil || (conn.queueLen() > 0 && len(t.pipelineConns) < t.maxConns()) {
+	// No conn available, create a new one.
+	if conn == nil || (conn.queueLen() > 0 && len(t.pipelineConns) < t.opts.MaxConns) {
 		conn = newDNSConn(t)
 		isNewConn = true
 		if t.pipelineConns == nil {
-			t.pipelineConns = make(map[*dnsConn]struct{})
+			t.pipelineConns = make(map[*dnsConn]*pipelineStatus)
 		}
-		t.pipelineConns[conn] = struct{}{}
+		connStatus = &pipelineStatus{}
+		t.pipelineConns[conn] = connStatus
 	}
 
-	allocatedQid, eol := conn.allocatePipelineQid()
-	if eol { // This connection has served too many queries.
-		// Note: the connection will close and clean up itself after its last query finished.
+	connStatus.served++
+	connStatus.wg.Add(1)
+	eol := connStatus.served >= int(t.opts.MaxQueryPerConn)
+	allocatedQid = uint16(connStatus.served)
+	wg = &connStatus.wg
+	if eol {
+		// This connection has served too many queries.
+		// Note: the connection should be closed only after all its queries finished.
 		// We can't close it here. Some queries may still on that connection.
 		delete(t.pipelineConns, conn)
+		defer func() {
+			go func() {
+				wg.Wait()
+				conn.closeWithErr(errEOL)
+			}()
+		}()
 	}
-
-	return conn, isNewConn, allocatedQid, nil
+	return
 }
 
 // connTooOld returns true if c's last read time is close to
@@ -383,24 +395,18 @@ func (t *Transport) connTooOld(c *dnsConn) bool {
 	if lrt.IsZero() {
 		return false
 	}
-	if tooOldTimeout := t.idleTimeout() - connTooOldThreshold; tooOldTimeout > 0 {
+	if tooOldTimeout := t.opts.IdleTimeout - connTooOldThreshold; tooOldTimeout > 0 {
 		tooOldDdl := lrt.Add(tooOldTimeout)
 		return time.Now().After(tooOldDdl)
 	}
 	return false
 }
 
-var dnsConnIdCounter uint32
-
 type dnsConn struct {
-	connId uint32 // Only for logging.
-
 	t *Transport
 
-	accumulateId uint32 // atomic
-	pipelineWg   sync.WaitGroup
-	queueMu      sync.Mutex // queue lock
-	queue        map[uint16]chan *dns.Msg
+	queueMu sync.Mutex // queue lock
+	queue   map[uint16]chan *dns.Msg
 
 	connMu             sync.Mutex
 	dialFinishedNotify chan struct{}
@@ -419,31 +425,9 @@ func newDNSConn(t *Transport) *dnsConn {
 		dialFinishedNotify: make(chan struct{}),
 		queue:              make(map[uint16]chan *dns.Msg),
 		closeNotify:        make(chan struct{}),
-		connId:             atomic.AddUint32(&dnsConnIdCounter, 1),
 	}
 	go dc.dialAndRead()
 	return dc
-}
-
-// allocatePipelineQid returns a qid for the next exchangePipeline() call and an eol mark
-// indicates the dnsConn is end-of-life (can't' serve more requests).
-// Note: exchangePipeline() must be called after allocatePipelineQid().
-// allocatePipelineQid() is not concurrent safe and can only be used in Transport.getPipelineConn().
-func (dc *dnsConn) allocatePipelineQid() (qid uint16, eol bool) {
-	maxQid := uint32(dc.t.maxQueryPerConn())
-	id := atomic.AddUint32(&dc.accumulateId, 1)
-	if id > maxQid {
-		panic("qid overflowed")
-	}
-	dc.pipelineWg.Add(1)
-	eol = id == maxQid
-	if eol {
-		go func() {
-			dc.pipelineWg.Wait()
-			dc.closeWithErr(errEOL)
-		}()
-	}
-	return uint16(id), eol
 }
 
 func (dc *dnsConn) exchangeConnReuse(ctx context.Context, q *dns.Msg) (*dns.Msg, error) {
@@ -451,7 +435,6 @@ func (dc *dnsConn) exchangeConnReuse(ctx context.Context, q *dns.Msg) (*dns.Msg,
 }
 
 func (dc *dnsConn) exchangePipeline(ctx context.Context, q *dns.Msg, allocatedQid uint16) (*dns.Msg, error) {
-	defer dc.pipelineWg.Done()
 	qSend := shadowCopy(q)
 	qSend.Id = allocatedQid
 	r, err := dc.exchange(ctx, qSend)
@@ -477,7 +460,7 @@ func (dc *dnsConn) exchange(ctx context.Context, q *dns.Msg) (*dns.Msg, error) {
 	defer dc.deleteQueueC(qid)
 
 	dc.c.SetWriteDeadline(time.Now().Add(writeTimeout))
-	_, err := dc.t.WriteFunc(dc.c, q)
+	_, err := dc.t.opts.WriteFunc(dc.c, q)
 	if err != nil {
 		// Write error usually is fatal. Abort and close this connection.
 		dc.closeWithErr(err)
@@ -497,7 +480,7 @@ func (dc *dnsConn) exchange(ctx context.Context, q *dns.Msg) (*dns.Msg, error) {
 func (dc *dnsConn) dialAndRead() {
 	dialCtx, cancel := context.WithTimeout(context.Background(), defaultDialTimeout)
 	defer cancel()
-	c, err := dc.t.DialFunc(dialCtx)
+	c, err := dc.t.opts.DialFunc(dialCtx)
 	if err != nil {
 		dc.closeWithErr(err)
 		return
@@ -519,8 +502,8 @@ func (dc *dnsConn) dialAndRead() {
 
 func (dc *dnsConn) readLoop() {
 	for {
-		dc.c.SetReadDeadline(time.Now().Add(dc.t.idleTimeout()))
-		r, _, err := dc.t.ReadFunc(dc.c)
+		dc.c.SetReadDeadline(time.Now().Add(dc.t.opts.IdleTimeout))
+		r, _, err := dc.t.opts.ReadFunc(dc.c)
 		if err != nil {
 			dc.closeWithErr(err) // abort this connection.
 			return
@@ -557,8 +540,6 @@ func (dc *dnsConn) closeWithErr(err error) {
 	if dc.c != nil {
 		dc.c.Close()
 	}
-
-	dc.t.logger().Debug("connection closed", zap.Uint32("id", dc.connId), zap.Error(err))
 }
 
 func (dc *dnsConn) queueLen() int {

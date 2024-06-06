@@ -278,7 +278,7 @@ func TestTransport_Exchange(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			transport := &Transport{
+			opts := Opts{
 				Logger:          zap.NewNop(),
 				DialFunc:        tt.fields.DialFunc,
 				WriteFunc:       tt.fields.WriteFunc,
@@ -288,10 +288,14 @@ func TestTransport_Exchange(t *testing.T) {
 				EnablePipeline:  tt.fields.EnablePipeline,
 				MaxQueryPerConn: 2,
 			}
-
+			transport, err := NewTransport(opts)
+			if err != nil {
+				t.Fatal(err)
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
 			defer cancel()
 
+			// Test err first.
 			if tt.wantErr {
 				q := new(dns.Msg)
 				q.SetQuestion(".", dns.TypeA)
@@ -301,6 +305,8 @@ func TestTransport_Exchange(t *testing.T) {
 				}
 				return
 			}
+
+			// Concurrent test.
 			wg := new(sync.WaitGroup)
 			for i := 0; i < tt.N; i++ {
 				wg.Add(1)
@@ -329,21 +335,19 @@ func TestTransport_Exchange(t *testing.T) {
 					break
 				}
 			}
-
 			wg.Wait()
 
 			// Wait until all connections are timed out.
 			time.Sleep(tt.fields.IdleTimeout + time.Millisecond*200)
 
-			pipelineConn, newConn, _, err := transport.getPipelineConn()
+			_, _, newConn, pipelineWg, err := transport.getPipelineConn()
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !newConn {
 				t.Fatal("pipelineConn should be a new connection")
 			}
-			pipelineConn.pipelineWg.Done()
-
+			pipelineWg.Done()
 			reusableConn, reused, err := transport.getReusableConn()
 			if err != nil {
 				t.Fatal(err)
