@@ -16,14 +16,14 @@ require (
 	github.com/nadoo/ipset v0.5.0
 	github.com/pires/go-proxyproto v0.7.0
 	github.com/prometheus/client_golang v1.19.1
-	github.com/quic-go/quic-go v0.45.2
+	github.com/quic-go/quic-go v0.46.0
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.9.0
 	go.uber.org/zap v1.27.0
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba
 	golang.org/x/exp v0.0.0-20240604190554-fc45aab8b7f8
-	golang.org/x/net v0.27.0
+	golang.org/x/net v0.28.0
 	golang.org/x/sync v0.8.0
 	golang.org/x/sys v0.23.0
 	google.golang.org/protobuf v1.34.2
@@ -63,9 +63,9 @@ require (
 	github.com/vishvananda/netns v0.0.0-20211101163701-50045581ed74 // indirect
 	go.uber.org/mock v0.4.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.25.0 // indirect
+	golang.org/x/crypto v0.26.0 // indirect
 	golang.org/x/mod v0.18.0 // indirect
-	golang.org/x/text v0.16.0 // indirect
+	golang.org/x/text v0.17.0 // indirect
 	golang.org/x/tools v0.22.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )
