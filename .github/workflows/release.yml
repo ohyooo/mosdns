@@ -32,7 +32,7 @@ jobs:
           CGO_ENABLED: '0'
 
       - name: Dir
-        run: ls -ahl
+        run: ls -ahl release
 
       - name: Upload to artifact
         uses: actions/upload-artifact@v4
