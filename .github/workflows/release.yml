@@ -31,6 +31,9 @@ jobs:
         env:
           CGO_ENABLED: '0'
 
+      - name: Dir
+        run: ls ahl
+
       - name: Upload to artifact
         uses: actions/upload-artifact@v4
         with:
