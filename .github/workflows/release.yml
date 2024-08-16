@@ -6,11 +6,41 @@ on:
       - 'v*'
   repository_dispatch:
   workflow_dispatch:
+    inputs:
+      upx:
+        type: boolean
+        description: 'enable upx'
+        required: true
+        default: 'true'
 
 jobs:
-
   build-release:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [darwin, linux, freebsd, windows]
+        arch: [amd64, arm64, arm, mipsle, mips64le, ppc64le]
+        include:
+        - arch: mips64le
+          target: GOMIPS64
+          name: hardfloat
+        - arch: mipsle
+          target: GOMIPS
+          name: softfloat
+        - arch: arm
+          target: GOARM
+          name: 5
+        - arch: arm
+          target: GOARM
+          name: 6
+        - arch: arm
+          target: GOARM
+          name: 7
+        - os: linux
+          arch: amd64
+          target: GOAMD64
+          name: v3
+
     steps:
       - uses: actions/checkout@v4
 
