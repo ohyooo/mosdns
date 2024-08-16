@@ -57,6 +57,8 @@ jobs:
             arch: mips64le
           - os: windows
             arch: ppc64le
+          - os: windows
+            arch: arm64
           - os: freebsd
             arch: arm
           - os: freebsd
@@ -65,6 +67,8 @@ jobs:
             arch: mips64le
           - os: freebsd
             arch: ppc64le
+          - os: freebsd
+            arch: arm64
 
     steps:
       - uses: actions/checkout@v4
