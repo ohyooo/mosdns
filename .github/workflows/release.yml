@@ -27,13 +27,16 @@ jobs:
         - arch: mipsle
           target: GOMIPS
           name: softfloat
-        - arch: arm
+        - os: linux
+          arch: arm
           target: GOARM
           name: 5
-        - arch: arm
+        - os: linux
+          arch: arm
           target: GOARM
           name: 6
-        - arch: arm
+        - os: linux
+          arch: arm
           target: GOARM
           name: 7
         - os: linux
@@ -93,8 +96,8 @@ jobs:
       - name: Dir
         run: ls -ahl release
 
-      - name: Upload to artifact
-        uses: actions/upload-artifact@v4
-        with:
-          path: './release/mosdns*.zip'
+      # - name: Upload to artifact
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     path: './release/mosdns*.zip'
 
