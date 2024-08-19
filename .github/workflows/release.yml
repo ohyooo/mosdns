@@ -89,8 +89,9 @@ jobs:
           python-version: '3.11'
 
       - name: check
-        run: go run ../ config gen config.yaml
-
+        run: |
+          ls -ahl
+          go run ../ config gen config.yaml
 
       - name: Build
         env:
