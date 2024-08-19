@@ -91,7 +91,7 @@ jobs:
       - name: check
         run: |
           ls -ahl
-          go run ../ config gen config.yaml
+          go run . config gen config.yaml
 
       - name: Build
         env:
@@ -107,7 +107,7 @@ jobs:
           fi
           bin_filename="$PROJECT_NAME${{ matrix.os }}_${{ matrix.arch }}$suffix"
 
-          go build -ldflags "-s -w" -trimpath -o $bin_filename ../
+          go build -ldflags "-s -w" -trimpath -o $bin_filename ./
 
       - name: Dir
         run: ls -ahl release
