@@ -104,7 +104,7 @@ jobs:
           else
             suffix=""
           fi
-          bin_filename="$PROJECT_NAME${{ matrix,os }}_${{ matrix,arch }}$suffix"
+          bin_filename="$PROJECT_NAME${{ matrix.os }}_${{ matrix.arch }}$suffix"
 
           go build -ldflags "-s -w" -trimpath -o $bin_filename ../
 
