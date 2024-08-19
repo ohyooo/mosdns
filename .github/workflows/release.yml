@@ -97,7 +97,7 @@ jobs:
         env:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
-          ${{ matrix.target }}: ${{ matrix.name }}
+          # ${{ matrix.target }}: ${{ matrix.name }}
         run: |
           PROJECT_NAME="mosdns"
           if [ "$(uname -s)" = "MINGW32_NT" ] || [ "$(uname -s)" = "MINGW64_NT" ]; then
