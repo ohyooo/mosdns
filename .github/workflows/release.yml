@@ -88,10 +88,25 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: check
+        run: go run ../ config gen config.yaml
+
+
       - name: Build
-        run: python ./release.py -upx
         env:
-          CGO_ENABLED: '0'
+          GOOS: matrix.os
+          GOARCH: matrix.arch
+          matrix.target: matrix.name
+        run: |
+          PROJECT_NAME="mosdns"
+          if [ "$(uname -s)" = "MINGW32_NT" ] || [ "$(uname -s)" = "MINGW64_NT" ]; then
+            suffix=".exe"
+          else
+            suffix=""
+          fi
+          bin_filename="$PROJECT_NAME${{ matrix,os }}_${{ matrix,arch }}$suffix"
+
+          go build -ldflags "-s -w" -trimpath -o $bin_filename ../
 
       - name: Dir
         run: ls -ahl release
