@@ -14,7 +14,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/nadoo/ipset v0.5.0
 	github.com/pires/go-proxyproto v0.7.0
-	github.com/prometheus/client_golang v1.20.3
+	github.com/prometheus/client_golang v1.20.4
 	github.com/quic-go/quic-go v0.47.0
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
