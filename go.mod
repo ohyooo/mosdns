@@ -5,7 +5,7 @@ toolchain go1.22.5
 
 require (
 	github.com/Knetic/govaluate v3.0.0+incompatible
-	github.com/fsnotify/fsnotify v1.7.0
+	github.com/fsnotify/fsnotify v1.8.0
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/golang/snappy v0.0.4
 	github.com/google/nftables v0.2.0
