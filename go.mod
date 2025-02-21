@@ -1,7 +1,7 @@
 module github.com/IrineSistiana/mosdns/v4
 
 go 1.21
-toolchain go1.22.5
+toolchain go1.23.6
 
 require (
 	github.com/Knetic/govaluate v3.0.0+incompatible
@@ -15,7 +15,7 @@ require (
 	github.com/nadoo/ipset v0.5.0
 	github.com/pires/go-proxyproto v0.8.0
 	github.com/prometheus/client_golang v1.21.0
-	github.com/quic-go/quic-go v0.49.0
+	github.com/quic-go/quic-go v0.50.0
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.10.0
