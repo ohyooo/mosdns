@@ -13,7 +13,7 @@ require (
 	github.com/miekg/dns v1.1.65
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/nadoo/ipset v0.5.0
-	github.com/pires/go-proxyproto v0.8.0
+	github.com/pires/go-proxyproto v0.8.1
 	github.com/prometheus/client_golang v1.22.0
 	github.com/quic-go/quic-go v0.51.0
 	github.com/spf13/cobra v1.9.1
