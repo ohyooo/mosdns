@@ -144,7 +144,7 @@ func loadConfig(filePath string) (*Config, string, error) {
 	}
 
 	cfg := new(Config)
-	if err := v.Unmarshal(cfg, decoderOpt); err != nil {
+	if err := v.Unmarshal(cfg, viper.DecodeHook(decoderOpt)); err != nil {
 		return nil, "", fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 	return cfg, v.ConfigFileUsed(), nil
