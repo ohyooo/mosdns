@@ -25,7 +25,7 @@ require (
 	golang.org/x/exp v0.0.0-20240604190554-fc45aab8b7f8
 	golang.org/x/net v0.48.0
 	golang.org/x/sync v0.19.0
-	golang.org/x/sys v0.39.0
+	golang.org/x/sys v0.40.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 )
